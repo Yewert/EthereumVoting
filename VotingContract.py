@@ -10,32 +10,33 @@ class VotingContract:
         self.__contract_api = contract_api
         self._number_of_candidates = number_of_candidates
 
-    def get_candidate(self, candidateIndex: int) -> bytes:
-        if not (0 <= candidateIndex < self._number_of_candidates):
+    def get_candidate(self, candidate_index: int) -> bytes:
+        if not (0 <= candidate_index < self._number_of_candidates):
             raise IndexError('invalid candidate_index')
-        return self.__contract_api.functions.getCandidate(candidateIndex).call()
+        return self.__contract_api.functions.getCandidate(candidate_index).call()
 
-    def get_candidate_votes(self, candidateIndex: int) -> int:
-        if not (0 <= candidateIndex < self._number_of_candidates):
+    def get_candidate_votes(self, candidate_index: int) -> int:
+        if not (0 <= candidate_index < self._number_of_candidates):
             raise IndexError('invalid candidate_index')
-        return self.__contract_api.functions.getCandidateVotes(candidateIndex).call()
+        return self.__contract_api.functions.getCandidateVotes(candidate_index).call()
 
     def get_candidates_and_votes(self) -> List[Tuple[bytes, int]]:
-        list:List[Tuple[bytes, int]] = []
+        result: List[Tuple[bytes, int]] = []
         for i in range(self._number_of_candidates):
             candidate = self.get_candidate(i)
             votes = self.get_candidate_votes(i)
-            list.append((candidate, votes))
-        return list
+            result.append((candidate, votes))
+        return result
 
-    def beginVote(self, voterId: int, candidateIndex: int) -> bytes:
-        if not (0 <= candidateIndex < self._number_of_candidates):
+    def begin_vote(self, voter_id: int, candidate_index: int) -> bytes:
+        if not (0 <= candidate_index < self._number_of_candidates):
             raise IndexError('invalid candidate_index')
-        return self.__contract_api.functions.vote(voterId, candidateIndex).transact()
+        return self.__contract_api.functions.vote(voter_id, candidate_index).transact()
 
-    def waitVote(self, transaction_hash: bytes) -> None:
+    def wait_vote(self, transaction_hash: bytes) -> None:
         # TODO: Do we need to do smth with tx_receipt?
         tx_receipt = self.__w3.eth.waitForTransactionReceipt(transaction_hash)
+
 
 class VotingContractFactory:
     w3: Web3
@@ -59,4 +60,4 @@ class VotingContractFactory:
         tx_receipt = self.w3.eth.waitForTransactionReceipt(tx_hash)
         contract_instance = self.w3.eth.contract(address=tx_receipt.contractAddress, abi=VotingContractFactory.__abi)
         number_of_candidates = contract_instance.functions.getNumberOfCandidates().call()
-        return VotingContract(contract_instance, number_of_candidates)
+        return VotingContract(self.w3, contract_instance, number_of_candidates)
