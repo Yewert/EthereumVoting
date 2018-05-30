@@ -1,21 +1,17 @@
-from VotingContract import VotingContractFactory
+from VotingManager import VotingManager
 
-factory = VotingContractFactory((127, 0, 0, 1), 7545)
-factory.w3.eth.defaultAccount = factory.w3.eth.accounts[0]
-con = factory.create(b'0\x001\x002')
+manager = VotingManager((127, 0, 0, 1), 14228)
+voting = manager.create_new_voting(['Диджей e-ban', 'ur mom'], 1337)
+for can in voting.get_all_candidates():
+    print(can)
+print('-' * 10)
 
+voting.vote_and_get_results(0, 0)
+voting.vote_and_get_results(0, 0)
+voting.vote_and_get_results(1, 0)
 
-def print_results(contract):
-    global candidate, votes
-    for candidate, votes in contract.get_candidates_and_votes():
-        print(f'{candidate.decode()}: {votes}')
-
-
-for i in range(2):
-    print_results(con)
-    con.vote(voter_id=0, candidate_index=0)
-    print('')
-else:
-    print_results(con)
-
-con.kill()
+print('-' * 10)
+print(voting.finalize(0))
+print('-' * 10)
+for can, vot in voting.finalize(1337):
+    print(f"{can}: {vot}")

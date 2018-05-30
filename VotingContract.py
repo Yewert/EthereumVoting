@@ -14,7 +14,6 @@ def wrap_vm_exception(func):
             # TODO: Logging?
             # print(str(e))
             print('whoops caught an exception')
-            return False
 
     return wrapper
 
@@ -30,13 +29,13 @@ class VotingContract:
         self._number_of_candidates = number_of_candidates
 
     @wrap_vm_exception
-    def get_candidate(self, candidate_index: int) -> bytes:
+    def _get_candidate(self, candidate_index: int) -> bytes:
         if not (0 <= candidate_index < self._number_of_candidates):
             raise IndexError('invalid candidate_index')
         return self._contract_api.functions.getCandidate(candidate_index).call()
 
     @wrap_vm_exception
-    def get_candidate_votes(self, candidate_index: int) -> int:
+    def _get_candidate_votes(self, candidate_index: int) -> int:
         if not (0 <= candidate_index < self._number_of_candidates):
             raise IndexError('invalid candidate_index')
         return self._contract_api.functions.getCandidateVotes(candidate_index).call()
@@ -45,10 +44,14 @@ class VotingContract:
     def get_candidates_and_votes(self) -> List[Tuple[bytes, int]]:
         result: List[Tuple[bytes, int]] = []
         for i in range(self._number_of_candidates):
-            candidate = self.get_candidate(i)
-            votes = self.get_candidate_votes(i)
+            candidate = self._get_candidate(i)
+            votes = self._get_candidate_votes(i)
             result.append((candidate, votes))
         return result
+
+    @wrap_vm_exception
+    def get_candidates(self) -> List[bytes]:
+        return [self._get_candidate(i) for i in range(self._number_of_candidates)]
 
     def _begin_vote(self, voter_id: int, candidate_index: int) -> bytes:
         if not (0 <= candidate_index < self._number_of_candidates):
