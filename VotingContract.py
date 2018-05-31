@@ -12,8 +12,8 @@ def wrap_vm_exception(func):
             return func(*args, **kwargs)
         except Exception as e:
             # TODO: Logging?
-            # print(str(e))
-            print('whoops caught an exception')
+            print(str(e))
+            # print('whoops caught an exception from EthVM')
 
     return wrapper
 
