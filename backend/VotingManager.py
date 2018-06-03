@@ -1,6 +1,6 @@
 from typing import Tuple, Optional, Set, List, Callable
 
-from VotingContract import VotingContractFactory, VotingContract
+from backend.VotingContract import VotingContractFactory, VotingContract
 
 
 class Voting:

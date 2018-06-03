@@ -12,8 +12,9 @@ def wrap_vm_exception(func):
             return func(*args, **kwargs)
         except Exception as e:
             # TODO: Logging?
-            print(str(e))
+            print(e)
             # print('whoops caught an exception from EthVM')
+            # print('низя два раза, мы не в россии')
 
     return wrapper
 
