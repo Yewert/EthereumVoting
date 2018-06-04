@@ -1,9 +1,11 @@
+import logging
 from functools import wraps
 from typing import Tuple, List, Callable
 
 from web3 import Web3, HTTPProvider
 from web3.eth import Contract
 
+logger = logging.getLogger(__name__)
 
 def wrap_vm_exception(func):
     @wraps(func)
@@ -11,10 +13,7 @@ def wrap_vm_exception(func):
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            # TODO: Logging?
-            print(e)
-            # print('whoops caught an exception from EthVM')
-            # print('низя два раза, мы не в россии')
+            logger.error(str(e))
 
     return wrapper
 

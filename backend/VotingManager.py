@@ -1,7 +1,9 @@
+import logging
 from typing import Tuple, Optional, Set, List, Callable
 
 from backend.VotingContract import VotingContractFactory, VotingContract
 
+logger = logging.getLogger(__name__)
 
 class Voting:
     _contract: VotingContract
@@ -41,8 +43,7 @@ class VotingManager:
                 return None, False
             return self._contract_factory.restore_from_address(address), True
         except Exception as e:
-            # TODO: logging?
-            print(str(e))
+            logger.error(str(e))
             return None, False
 
     def _create_new_contract(self, candidates: bytes, owner_id: int) -> VotingContract:

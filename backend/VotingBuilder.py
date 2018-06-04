@@ -13,8 +13,14 @@ class VotingBuilder:
         self.__counter = -1
         self.__candidate_list = []
 
-    def add_candidate(self, candidate: str) -> Optional[Voting]:
+    def get_voting(self) -> Optional[Voting]:
+        if len(self.__candidate_list) == 0:
+            return
+        return self.__manager.create_new_voting(self.__candidate_list, self.__owner)
+
+    def add_candidate(self, candidate: Optional[str]) -> bool:
         self.__counter += 1
-        if candidate == '' or self.__counter == 10:
-            return self.__manager.create_new_voting(self.__candidate_list, self.__owner)
-        self.__candidate_list.append(candidate)
+        if self.__counter < 10:
+            self.__candidate_list.append(candidate)
+            return True
+        return False
