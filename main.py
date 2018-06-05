@@ -1,19 +1,20 @@
 import logging
-
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
 from typing import Dict
 
 from telegram import Bot, Update, ReplyKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, ConversationHandler, RegexHandler, Filters, MessageHandler
 
-from backend.VotingBuilder import VotingBuilder
+from backend.VotingBuilder import VotingBuilder, Voting
 from backend.VotingManager import VotingManager
 
 logger = logging.getLogger(__name__)
 builders: Dict[int, VotingBuilder] = {}
+currently_modified_votings: Dict[int, Voting] = {}
 VOTING_MANAGER = VotingManager((127, 0, 0, 1), 14228)
 CANDIDATE_NAME_LENGTH = 30
-MAIN_MENU, VOTE_CREATION, VOTE_SELECTION = range(3)
+MAIN_MENU, VOTING_CREATION, VOTING_SELECTION, VOTING_MANAGEMENT = range(4)
 MAIN_MENU_KEYBOARD = [['create'], ['select']]
 
 
@@ -28,9 +29,21 @@ def error(bot, chat_id, state, message, **botkwagrgs):
     return state
 
 
+def error_to_menu(bot, chat_id, message):
+    return error(bot, chat_id, MAIN_MENU, message,
+                 reply_markup=ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, one_time_keyboard=True))
+
+
+def unsupported_action(bot, update):
+    chat_id = update.message.chat_id
+    return error_to_menu(bot, chat_id, 'unsupported action')
+
+
 def cancel(bot, update):
     if update.message.from_user.id in builders:
         del builders[update.message.from_user.id]
+    if update.message.from_user.id in currently_modified_votings:
+        del currently_modified_votings[update.message.from_user.id]
     bot.send_message(chat_id=update.message.chat_id, text='Canceled',
                      reply_markup=ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, one_time_keyboard=True))
     return MAIN_MENU
@@ -40,32 +53,107 @@ def finalize_creation(bot, update):
     user = update.message.from_user
     chat_id = update.message.chat_id
     if user.id not in builders:
-        return error(bot, chat_id, VOTE_CREATION, 'try to add some candidates first')
+        return error(bot, chat_id, VOTING_CREATION, 'try to add some candidates first')
     res = builders[user.id].get_voting()
     del builders[user.id]
-    candidates = res.get_all_candidates()
+    candidates = res.get_candidates()
     if not candidates:
-        return error(bot, chat_id, MAIN_MENU, 'candidates extraction failed',
-                     reply_markup=ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, one_time_keyboard=True))
+        return error_to_menu(bot, chat_id, 'candidates extraction failed')
     candidates = '\n'.join(candidates)
     logger.info(f'User {user.id} created new voting at address {res.address}')
-    bot.send_message(chat_id=chat_id, text=f"Here's your vote:\n{res.address}\n{candidates}",
+    bot.send_message(chat_id=chat_id, text=f"Here's your vote:\n{candidates}")
+    bot.send_message(chat_id=chat_id, text=res.address,
                      reply_markup=ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, one_time_keyboard=True))
     return MAIN_MENU
 
 
-def vote_creation(bot, update):
+def voting_creation(bot, update):
     user = update.message.from_user
     chat_id = update.message.chat_id
     if user.id not in builders:
         builders[user.id] = VotingBuilder(user.id, VOTING_MANAGER)
     if len(update.message.text) > CANDIDATE_NAME_LENGTH:
-        return error(bot, chat_id, VOTE_CREATION, f'line too long ({CANDIDATE_NAME_LENGTH} characters is max)')
+        return error(bot, chat_id, VOTING_CREATION, f'line too long ({CANDIDATE_NAME_LENGTH} characters is max)')
     status = builders[user.id].add_candidate(update.message.text)
     if not status:
-        return error(bot, chat_id, VOTE_CREATION, 'candidate list is full\n use /end to finalize voting creation')
+        return error(bot, chat_id, VOTING_CREATION, 'candidate list is full\n use /end to finalize voting creation')
     bot.send_message(chat_id=chat_id, text=f'Added candidate "{update.message.text}" to list')
-    return VOTE_CREATION
+    return VOTING_CREATION
+
+
+def voting_selection(bot, update):
+    user = update.message.from_user
+    chat_id = update.message.chat_id
+    voting = VOTING_MANAGER.get_voting_from_address(update.message.text)
+    if not voting:
+        logger.warning(f'User {user.id} tried to access wrong address {update.message.text}')
+        return error_to_menu(bot, chat_id, 'wrong address')
+    currently_modified_votings[user.id] = voting
+    candidates = voting.get_candidates()
+    if not candidates:
+        raise NotImplementedError
+    candidates_str = '\n'.join(candidates)
+    bot.send_message(chat_id=chat_id, text=f"Here's a list of candidates\n"
+                                           f"{candidates_str}\n"
+                                           f"You can /view results\n"
+                                           f"You can also /finalize voting (active only for owner)")
+    voted = voting.has_voted(user.id)
+    if voted is None:
+        raise NotImplementedError
+    if not voted:
+        keyb = [[candidate] for candidate in candidates]
+        bot.send_message(chat_id=chat_id,
+                         text='Seems like you haven\'t voted yet!\nYou can choose candidate on the keyboard',
+                         reply_markup=ReplyKeyboardMarkup(keyb, one_time_keyboard=True))
+    return VOTING_MANAGER
+
+
+def vote(bot, update):
+    user = update.message.from_user
+    chat_id = update.message.chat_id
+    if user.id not in currently_modified_votings:
+        raise NotImplementedError
+    voting = currently_modified_votings[user.id]
+    voted = voting.has_voted(user.id)
+    if voted is None:
+        del currently_modified_votings[user.id]
+        return error_to_menu(bot, chat_id,
+                             'contract interaction error.\nThere\'s high chance, that owner finalized this voting')
+    if voted:
+        return error(bot, chat_id, VOTING_MANAGER, 'you have already voted!')
+    candidates = voting.get_candidates()
+    if not candidates:
+        del currently_modified_votings[user.id]
+        return error_to_menu(bot, chat_id,
+                             'contract interaction error.\nThere\'s high chance, that owner finalized this voting')
+    try:
+        ind = candidates.index(update.message.text)
+    except ValueError:
+        return error(bot, chat_id, VOTING_MANAGER, 'candidate not present in the list')
+    res = voting.vote_and_get_results(user.id, ind)
+    if not res:
+        raise NotImplementedError
+    res_str = '\n'.join((f'{candidate} : {votes}' for candidate, votes in res))
+    bot.send_message(chat_id=chat_id, text=f'{voting.address}\n{res_str}')
+    return VOTING_MANAGER
+
+
+def finalize_voting(bot, update):
+    user = update.message.from_user
+    chat_id = update.message.chat_id
+    if user.id not in currently_modified_votings:
+        raise NotImplementedError
+    voting = currently_modified_votings[user.id]
+    address = voting.address
+    res = voting.finalize(user.id)
+    if not res:
+        return error(bot, chat_id, VOTING_MANAGER, 'you are not the owner of this voting!')
+    del currently_modified_votings[user.id]
+    res_str = '\n'.join((f'{candidate} : {votes}' for candidate, votes in res))
+    bot.send_message(chat_id=chat_id,
+                     text=f'Voting at adress:\n{address}\nsuccessfully finalized.\nHere\'s the results\n{res_str}',
+                     reply_markup=ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, one_time_keyboard=True))
+    return MAIN_MENU
 
 
 def main_menu(bot: Bot, update: Update):
@@ -74,45 +162,31 @@ def main_menu(bot: Bot, update: Update):
         logger.info(f'User {user.id} wanted to create voting')
         bot.send_message(chat_id=update.message.chat_id,
                          text='Enter candidates one by one (10 is max)\nUse /end to finalize voting creation')
-        return VOTE_CREATION
+        return VOTING_CREATION
     if update.message.text == 'select':
         logger.info(f'User {user.id} wanted to select voting')
-        bot.send_message(chat_id=update.message.chat_id, text='Not supported yet',
-                         reply_markup=ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, one_time_keyboard=True))
-        return MAIN_MENU
+        bot.send_message(chat_id=update.message.chat_id, text='Type in your voting address')
+        return VOTING_SELECTION
     return None
 
 
 updater = Updater('560433922:AAHzL-izLbi3EZNHbPuDCy-9ckefnb3D7rE')
 dispatcher = updater.dispatcher
+
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', send_hello)],
 
     states={
         MAIN_MENU: [RegexHandler('^(create|select)$', main_menu)],
 
-        VOTE_CREATION: [CommandHandler('end', finalize_creation), MessageHandler(Filters.text, vote_creation)],
+        VOTING_CREATION: [CommandHandler('end', finalize_creation), MessageHandler(Filters.text, voting_creation)],
 
-        VOTE_SELECTION: [],
+        VOTING_SELECTION: [RegexHandler('^0x[0-9A-Fa-f]+$', voting_selection)],
+        VOTING_MANAGER: [CommandHandler('finalize', finalize_voting), MessageHandler(Filters.text, vote)]
     },
 
-    fallbacks=[CommandHandler('cancel', cancel)]
+    fallbacks=[CommandHandler('cancel', cancel), MessageHandler(Filters.all, unsupported_action)]
 )
 dispatcher.add_handler(conv_handler)
+logger.info('Running')
 updater.start_polling()
-
-# manager = VotingManager((127, 0, 0, 1), 14228)
-# voting = manager.create_new_voting(['путин', 'нэвэльный'], 1337)
-# for can in voting.get_all_candidates():
-#     print(can)
-# print('-' * 10)
-# voting.vote_and_get_results(0, 0)
-# voting.vote_and_get_results(0, 0)
-# voting.vote_and_get_results(0, 1)
-# voting.vote_and_get_results(12, 1)
-#
-# print('-' * 10)
-# print(voting.finalize(0))
-# print('-' * 10)
-# for can, vot in voting.finalize(1337):
-#     print(f"{can}: {vot}")

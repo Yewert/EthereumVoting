@@ -44,9 +44,9 @@ contract Voting{
         votes[candidateIndex]++;
     }
 
-    function hasVoted(uint256 voter) private view returns (bool){
+    function hasVoted(uint256 voterId) public view returns (bool){
         require(msg.sender == admin);
-        return votedIds[voter];
+        return votedIds[voterId];
     }
     
     function kill() public{
