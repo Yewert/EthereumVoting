@@ -1,4 +1,5 @@
 import logging
+
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 from typing import Dict
@@ -36,6 +37,10 @@ def error_to_menu(bot, chat_id, message):
 
 def unsupported_action(bot, update):
     chat_id = update.message.chat_id
+    if update.message.from_user.id in builders:
+        del builders[update.message.from_user.id]
+    if update.message.from_user.id in currently_modified_votings:
+        del currently_modified_votings[update.message.from_user.id]
     return error_to_menu(bot, chat_id, 'unsupported action')
 
 
@@ -56,6 +61,8 @@ def finalize_creation(bot, update):
         return error(bot, chat_id, VOTING_CREATION, 'try to add some candidates first')
     res = builders[user.id].get_voting()
     del builders[user.id]
+    if not res:
+        return error_to_menu(bot, chat_id, 'voting creation failed')
     candidates = res.get_candidates()
     if not candidates:
         return error_to_menu(bot, chat_id, 'candidates extraction failed')
@@ -74,6 +81,8 @@ def voting_creation(bot, update):
         builders[user.id] = VotingBuilder(user.id, VOTING_MANAGER)
     if len(update.message.text) > CANDIDATE_NAME_LENGTH:
         return error(bot, chat_id, VOTING_CREATION, f'line too long ({CANDIDATE_NAME_LENGTH} characters is max)')
+    if builders[user.id].contains(update.message.text):
+        error(bot, chat_id, VOTING_CREATION, 'duplicate candidates are not allowed')
     status = builders[user.id].add_candidate(update.message.text)
     if not status:
         return error(bot, chat_id, VOTING_CREATION, 'candidate list is full\n use /end to finalize voting creation')
@@ -118,14 +127,14 @@ def vote(bot, update):
     if voted is None:
         del currently_modified_votings[user.id]
         return error_to_menu(bot, chat_id,
-                             'contract interaction error.\nThere\'s high chance, that owner finalized this voting')
+                             'contract interaction error.\nThere\'s high chance that owner finalized this voting')
     if voted:
         return error(bot, chat_id, VOTING_MANAGER, 'you have already voted!')
     candidates = voting.get_candidates()
     if not candidates:
         del currently_modified_votings[user.id]
         return error_to_menu(bot, chat_id,
-                             'contract interaction error.\nThere\'s high chance, that owner finalized this voting')
+                             'contract interaction error.\nThere\'s high chance that owner finalized this voting')
     try:
         ind = candidates.index(update.message.text)
     except ValueError:
@@ -156,6 +165,23 @@ def finalize_voting(bot, update):
     return MAIN_MENU
 
 
+def view_results(bot, update):
+    user = update.message.from_user
+    chat_id = update.message.chat_id
+    if user.id not in currently_modified_votings:
+        raise NotImplementedError
+    voting = currently_modified_votings[user.id]
+    address = voting.address
+    res = voting.get_candidates_votes()
+    if not res:
+        del currently_modified_votings[user.id]
+        return error_to_menu(bot, chat_id,
+                             'contract interaction error.\nThere\'s high chance that owner finalized this voting')
+    res_str = '\n'.join((f'{candidate} : {votes}' for candidate, votes in res))
+    bot.send_message(chat_id=chat_id, text=f'{address}\n{res_str}')
+    return VOTING_MANAGER
+
+
 def main_menu(bot: Bot, update: Update):
     user = update.message.from_user
     if update.message.text == 'create':
@@ -170,7 +196,7 @@ def main_menu(bot: Bot, update: Update):
     return None
 
 
-updater = Updater('560433922:AAHzL-izLbi3EZNHbPuDCy-9ckefnb3D7rE')
+updater = Updater('')
 dispatcher = updater.dispatcher
 
 conv_handler = ConversationHandler(
@@ -182,7 +208,8 @@ conv_handler = ConversationHandler(
         VOTING_CREATION: [CommandHandler('end', finalize_creation), MessageHandler(Filters.text, voting_creation)],
 
         VOTING_SELECTION: [RegexHandler('^0x[0-9A-Fa-f]+$', voting_selection)],
-        VOTING_MANAGER: [CommandHandler('finalize', finalize_voting), MessageHandler(Filters.text, vote)]
+        VOTING_MANAGER: [CommandHandler('view', view_results), CommandHandler('finalize', finalize_voting),
+                         MessageHandler(Filters.text, vote)]
     },
 
     fallbacks=[CommandHandler('cancel', cancel), MessageHandler(Filters.all, unsupported_action)]

@@ -35,7 +35,7 @@ class Voting:
         res = self._contract.get_candidates_and_votes()
         if not res:
             return
-        return [(c.decode(), v) for c, v in self._contract.get_candidates_and_votes()]
+        return [(c.decode(), v) for c, v in res]
 
     def finalize(self, callie_id: int) -> Optional[List[Tuple[str, int]]]:
         return self._finalizer(self._contract, callie_id)
@@ -48,7 +48,7 @@ class VotingManager:
     def _try_get_contract_by_address(self, address: str) -> Optional[VotingContract]:
         return self._contract_factory.restore_from_address(address)
 
-    def _create_new_contract(self, candidates: bytes, owner_id: int) -> VotingContract:
+    def _create_new_contract(self, candidates: bytes, owner_id: int) -> Optional[VotingContract]:
         contract = self._contract_factory.create(candidates, owner_id)
         return contract
 
@@ -57,14 +57,18 @@ class VotingManager:
         if contract:
             return Voting(contract, self._finalize_voting)
 
-    def create_new_voting(self, candidates: List[str], owner_id) -> Voting:
+    def create_new_voting(self, candidates: List[str], owner_id) -> Optional[Voting]:
         candidates_bytes = b'\x00'.join((candidate.encode() for candidate in candidates))
         contract = self._create_new_contract(candidates_bytes, owner_id)
+        if not contract:
+            return
         return Voting(contract, self._finalize_voting)
 
     def _finalize_voting(self, contract: Optional[VotingContract], callie_id: int) -> Optional[List[Tuple[str, int]]]:
         if contract:
             results: List[Tuple[bytes, int]] = contract.get_candidates_and_votes()
+            if not results:
+                return
             if not contract.kill(callie_id):
                 return
             return [(c.decode(), v) for c, v in results]

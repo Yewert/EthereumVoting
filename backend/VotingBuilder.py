@@ -24,3 +24,6 @@ class VotingBuilder:
             self.__candidate_list.append(candidate)
             return True
         return False
+
+    def contains(self, candidate: str) -> bool:
+        return candidate in self.__candidate_list

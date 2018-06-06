@@ -26,20 +26,18 @@ class VotingContract:
         self._contract_api = contract_api
         self.address = contract_api.address
 
-    @wrap_vm_exception
     def _get_candidate(self, candidate_index: int) -> bytes:
         if not (0 <= candidate_index < self._contract_api.functions.getNumberOfCandidates().call()):
             raise IndexError('invalid candidate_index')
         return self._contract_api.functions.getCandidate(candidate_index).call()
 
-    @wrap_vm_exception
     def _get_candidate_votes(self, candidate_index: int) -> int:
         if not (0 <= candidate_index < self._contract_api.functions.getNumberOfCandidates().call()):
             raise IndexError('invalid candidate_index')
         return self._contract_api.functions.getCandidateVotes(candidate_index).call()
 
     @wrap_vm_exception
-    def get_candidates_and_votes(self) -> List[Tuple[bytes, int]]:
+    def get_candidates_and_votes(self) -> Optional[List[Tuple[bytes, int]]]:
         result: List[Tuple[bytes, int]] = []
         for i in range(self._contract_api.functions.getNumberOfCandidates().call()):
             candidate = self._get_candidate(i)
@@ -48,7 +46,7 @@ class VotingContract:
         return result
 
     @wrap_vm_exception
-    def get_candidates(self) -> List[bytes]:
+    def get_candidates(self) -> Optional[List[bytes]]:
         return [self._get_candidate(i) for i in range(self._contract_api.functions.getNumberOfCandidates().call())]
 
     def _begin_vote(self, voter_id: int, candidate_index: int) -> bytes:
@@ -61,11 +59,11 @@ class VotingContract:
         tx_receipt = self.__await_transaction(transaction_hash)
 
     @wrap_vm_exception
-    def has_voted(self, voter_id: int) -> bool:
+    def has_voted(self, voter_id: int) -> Optional[bool]:
         return self._contract_api.functions.hasVoted(voter_id).call()
 
     @wrap_vm_exception
-    def vote(self, voter_id: int, candidate_index: int) -> bool:
+    def vote(self, voter_id: int, candidate_index: int) -> Optional[bool]:
         self.wait_for_transaction(self._begin_vote(voter_id, candidate_index))
         return True
 
@@ -73,7 +71,7 @@ class VotingContract:
         return self._contract_api.functions.kill().transact()
 
     @wrap_vm_exception
-    def kill(self, callie_id: int) -> bool:
+    def kill(self, callie_id: int) -> Optional[bool]:
         # TODO: consider moving this validation into the contract
         if callie_id != self._contract_api.functions.getOwner().call():
             return False
@@ -97,7 +95,8 @@ class VotingContractFactory:
         self.w3 = Web3(HTTPProvider(self.url))
         self.w3.eth.defaultAccount = self.w3.eth.accounts[0]
 
-    def create(self, *contract_args, **contract_kwargs) -> VotingContract:
+    @wrap_vm_exception
+    def create(self, *contract_args, **contract_kwargs) -> Optional[VotingContract]:
         contract = self.w3.eth.contract(abi=VotingContractFactory._abi, bytecode=VotingContractFactory._bytecode)
         tx_hash = contract.constructor(*contract_args, **contract_kwargs).transact()
         tx_receipt = self.w3.eth.waitForTransactionReceipt(tx_hash)
@@ -105,7 +104,6 @@ class VotingContractFactory:
 
     def _init_contract(self, address):
         contract_instance = self.w3.eth.contract(address=address, abi=VotingContractFactory._abi)
-        number_of_candidates = contract_instance.functions.getNumberOfCandidates().call()
         return VotingContract(self.w3.eth.waitForTransactionReceipt, contract_instance)
 
     @wrap_vm_exception
