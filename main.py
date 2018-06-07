@@ -20,7 +20,9 @@ MAIN_MENU_KEYBOARD = [['create'], ['select']]
 
 
 def send_hello(bot, update):
-    bot.send_message(chat_id=update.message.chat_id, text="hello mah dewd",
+    bot.send_message(chat_id=update.message.chat_id, text="Hi! This is a voting bot powered by ethereum blockchain!\n"
+                                                          "You can create or select existing voting by clicking on buttons bellow.\n"
+                                                          "To return to main menu from anywhere send /cancel command to the bot.",
                      reply_markup=ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, one_time_keyboard=True))
     return MAIN_MENU
 
@@ -82,7 +84,7 @@ def voting_creation(bot, update):
     if len(update.message.text) > CANDIDATE_NAME_LENGTH:
         return error(bot, chat_id, VOTING_CREATION, f'line too long ({CANDIDATE_NAME_LENGTH} characters is max)')
     if builders[user.id].contains(update.message.text):
-        error(bot, chat_id, VOTING_CREATION, 'duplicate candidates are not allowed')
+        return error(bot, chat_id, VOTING_CREATION, 'duplicate candidates are not allowed')
     status = builders[user.id].add_candidate(update.message.text)
     if not status:
         return error(bot, chat_id, VOTING_CREATION, 'candidate list is full\n use /end to finalize voting creation')
@@ -95,7 +97,7 @@ def voting_selection(bot, update):
     chat_id = update.message.chat_id
     voting = VOTING_MANAGER.get_voting_from_address(update.message.text)
     if not voting:
-        logger.warning(f'User {user.id} tried to access wrong address {update.message.text}')
+        logger.warning(f'User {user.id} {user.username} tried to access wrong address {update.message.text}')
         return error_to_menu(bot, chat_id, 'wrong address')
     currently_modified_votings[user.id] = voting
     candidates = voting.get_candidates()
@@ -114,6 +116,7 @@ def voting_selection(bot, update):
         bot.send_message(chat_id=chat_id,
                          text='Seems like you haven\'t voted yet!\nYou can choose candidate on the keyboard',
                          reply_markup=ReplyKeyboardMarkup(keyb, one_time_keyboard=True))
+    logger.info(f'User {user.id} {user.username} accessed voting at address {voting.address}')
     return VOTING_MANAGER
 
 
@@ -185,12 +188,12 @@ def view_results(bot, update):
 def main_menu(bot: Bot, update: Update):
     user = update.message.from_user
     if update.message.text == 'create':
-        logger.info(f'User {user.id} wanted to create voting')
+        logger.info(f'User {user.id} {user.username} wanted to create voting')
         bot.send_message(chat_id=update.message.chat_id,
                          text='Enter candidates one by one (10 is max)\nUse /end to finalize voting creation')
         return VOTING_CREATION
     if update.message.text == 'select':
-        logger.info(f'User {user.id} wanted to select voting')
+        logger.info(f'User {user.id} {user.username} wanted to select voting')
         bot.send_message(chat_id=update.message.chat_id, text='Type in your voting address')
         return VOTING_SELECTION
     return None
